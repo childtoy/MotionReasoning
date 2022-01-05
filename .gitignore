@@ -2,3 +2,5 @@ dataset
 data
 *.pyc
 *.pt
+*.png
+*.jpg
