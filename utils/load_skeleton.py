@@ -22,6 +22,20 @@ class Skel:
         self.hips, self.sdrs = skel['hips'], skel['shoulders']
         self.head = skel['head']
         self.visualization = skel['visualization']
+class Skel_emotion:
+    def __init__(self, filename=os.path.join(BASEPATH, "..", "style_transfer", "global_info", "skeleton_emotion.yml")):
+        f = open(filename, "r")
+        skel = yaml.load(f, Loader=yaml.Loader)
+        self.bvh_name = os.path.join(os.path.dirname(filename), skel['BVH'])
+        self.rest_bvh = BVH.load(self.bvh_name)
+        self.offset = np.array(skel['offsets'])
+        self.topology = np.array(skel['parents'])
+        self.chosen_joints = np.array(skel['chosen_joints'])
+        self.chosen_parents = np.array(skel['chosen_parents'])
+        self.fid_l, self.fid_r = skel['left_foot'], skel['right_foot']
+        self.hips, self.sdrs = skel['hips'], skel['shoulders']
+        self.head = skel['head']
+        self.visualization = skel['visualization']
 
 
 if __name__ == '__main__':
