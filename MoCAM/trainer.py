@@ -11,8 +11,8 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data.emotionmocap_dataset import EmotionDataset
-from data.utils import increment_path
+from data_proc.emotionmocap_dataset import EmotionDataset
+from data_proc.utils import increment_path
 from model.model import TCN
 import torch.nn.functional as F
 
