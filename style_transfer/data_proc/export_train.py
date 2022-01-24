@@ -92,6 +92,9 @@ def get_bvh_files(directory):
             if os.path.isfile(os.path.join(directory, f))
             and f.endswith('.bvh') and f != 'rest.bvh']
 
+def get_bvh_files_emotion(directory):
+    import glob
+    return [f for f in sorted(list(glob.glob(directory+'/*/*.bvh'))) if f != 'rest_emotion.bvh']
 
 def set_init(dic, key, value):
     try:
