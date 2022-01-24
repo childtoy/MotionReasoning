@@ -1,3 +1,6 @@
+dataset
+data
+*.npz
 *.mat
 *.bvh
 *.pkl
