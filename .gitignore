@@ -1,5 +1,6 @@
-dataset
-data
+*.mat
+*.bvh
+*.pkl
 *.pyc
 *.pt
 *.png
