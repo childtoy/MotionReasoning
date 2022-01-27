@@ -1,0 +1,1 @@
+python3 trainer_pure3d.py

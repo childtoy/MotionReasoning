@@ -1,0 +1,1 @@
+python3 trainer_resnet1d.py

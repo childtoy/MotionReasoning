@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import wandb
 import yaml
-from torch.optim import AdamW
+from torch.optim import AdamW, Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -31,7 +31,7 @@ def train(opt, device):
                           
     # Loggers
     #init wandb
-    # wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
+    wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load EmotionMoCap Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
@@ -42,15 +42,17 @@ def train(opt, device):
     input_channels = 105
     seq_length = opt.window
     epochs = opt.epochs
-    n_hid = 256
-    n_level = 4
+    n_hid = 128
+    n_level = 6
     channel_sizes = [n_hid] * n_level
-    model = TCN(input_channels, n_classes, channel_sizes, kernel_size=5, dropout=0.05)
+    kernel_size = 5
+    model = TCN(input_channels, n_classes, channel_sizes, kernel_size=kernel_size, dropout=0.05)
     model.to(device)
-    criterion = nn.CrossEntropyLoss()
 
-    optim = AdamW(params=model.parameters(), lr=opt.learning_rate)
-    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=100, gamma=0.9)
+    # optim = AdamW(params=model.parameters(), lr=opt.learning_rate)
+
+    optim = Adam(params=model.parameters(),lr=opt.learning_rate,betas=(0.5, 0.9))
+    # scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=100, gamma=0.9)
 
     for epoch in range(1, epochs + 1):
 
@@ -58,19 +60,20 @@ def train(opt, device):
         for batch in pbar:
             
             local_q = batch["local_q"].to(device)
-            q_vec = batch["q_vel"].to(device) 
+            q_vel = batch["q_vel"].to(device) 
             q_acc = batch["q_acc"].to(device) 
             labels = batch["labels"].to(device)
-            data = torch.cat([local_q, q_vec, q_acc], axis=2)
+            data = torch.cat([local_q, q_vel, q_acc], axis=2)
+            # data = q_vel
             data = data.permute(0,2,1)
             output = model(data)
             optim.zero_grad()      
-            loss = criterion(output, labels)
+            loss = F.nll_loss(output, labels)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=False)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=False)
             optim.step()
 
-        scheduler.step()
+        # scheduler.step()
         # Log
         log_dict = {
             "Train/Loss": loss, 
@@ -80,11 +83,12 @@ def train(opt, device):
         # Save model
         if (epoch % save_interval) == 0:
             ckpt = {'epoch': epoch,
-                    'TCN': TCN.state_dict(),
+                    'TCN': model.state_dict(),
                     'input_channels': input_channels,
                     'n_hid': n_hid,
                     'n_level': n_level,
                     'n_classes': n_classes,
+                    'kernel_size': kernel_size,
                     'optimizer_state_dict': optim.state_dict(),
                     'loss': loss}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
@@ -96,17 +100,17 @@ def train(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--data_path', type=str, default='/Users/taehyun/workspace/childtoy/MotionReasoning/style_transfer/data/mocap_emotion_rig', help='Mat dataset path')
+    parser.add_argument('--data_path', type=str, default='/home/taehyun/workspace/childtoy/MotionReasoning/dataset/mocap_emotion_rig', help='Mat dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_mocam/', help='path to save pickled processed data')
-    parser.add_argument('--window', type=int, default=40, help='window')
+    parser.add_argument('--window', type=int, default=80, help='window')
     parser.add_argument('--wandb_pj_name', type=str, default='MoCAM', help='project name')
-    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=128, help='batch size')
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--device', default='0', help='cuda device')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=10, help='Log model after every "save_period" epoch')
-    parser.add_argument('--learning_rate', type=float, default=0.01, help='generator_learning_rate')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='generator_learning_rate')
 
     opt = parser.parse_args()
     return opt
