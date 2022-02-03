@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from data_proc.emotionmocap_dataset import EmotionDataset
 from data_proc.utils import increment_path
-from model.model import TCN, PURE3D
+from model.model import TCN, PURE1D
 import torch.nn.functional as F
 
 
@@ -37,15 +37,15 @@ def test(opt, device):
     emotion_dataset = EmotionDataset(data_dir=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=opt.window)
     emotion_data_loader = DataLoader(emotion_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0)
 
-
+    n_classes = ckpt['n_classes']
+    input_channels = ckpt['input_channels']
     n_classes = 7
-    input_channels = 3
-    n_hid = 70
-    n_level = 4
-    n_channels = 64
+    input_channels = 105
+    n_hid = 128
+    n_level = 6
     channel_sizes = [n_hid] * n_level
     kernel_size = 5
-    model = PURE3D(input_channels, n_channels, n_classes, kernel_size=kernel_size, dropout=0)
+    model = TCN(input_channels, n_classes, channel_sizes, kernel_size=kernel_size, dropout=0.05)
     model.load_state_dict(ckpt['TCN'])
     model.eval()
     correct = 0
@@ -57,9 +57,8 @@ def test(opt, device):
             q_vel = batch["q_vel"].to(device) 
             q_acc = batch["q_acc"].to(device) 
             labels = batch["labels"].to(device)
-            # data = torch.cat([local_q, local_q, local_q], axis=2)
-            data = torch.cat([local_q.unsqueeze(3), local_q.unsqueeze(3), local_q.unsqueeze(3)], axis=3)
-            data = data.permute(0,3,2,1)
+            data = torch.cat([local_q, q_vel, q_acc], axis=2)
+            data = data.permute(0,2,1)
             print(data.shape)
             output = model(data)
             prediction = output.data.max(1)[1]
@@ -77,7 +76,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--weight', default='latest')
-    parser.add_argument('--exp_name', default='exp148', help='experiment name')
+    parser.add_argument('--exp_name', default='exp149', help='experiment name')
     parser.add_argument('--data_path', type=str, default='/home/taehyun/workspace/childtoy/MotionReasoning/dataset/mocap_emotion_rig', help='BVH dataset path')
     parser.add_argument('--window', type=int, default=80, help='window')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size')

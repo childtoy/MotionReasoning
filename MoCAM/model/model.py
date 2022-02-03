@@ -6,6 +6,7 @@ from model.PURE1D import Pure1dNet
 from model.PURE3D import Pure3dNet
 import torch.nn.functional as F
 from model.MLP import MlpNet
+from model.MOT import MotionTransformer
 
 class TCN(nn.Module):
     def __init__(self, input_size, output_size, num_channels, kernel_size, dropout):
@@ -51,3 +52,15 @@ class MLP(nn.Module):
         return F.log_softmax(output)
     
         # return self.softmax(output)        
+
+class MoT(nn.Module):
+    def __init__(self, input_size, output_size, dropout):
+        super(MoT, self).__init__()
+        self.net = MotionTransformer(seq_len=60, in_chans=35, num_classes=7, embed_dim=35, depth=12,
+                 num_heads=7, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+                 drop_path_rate=0., norm_layer=nn.LayerNorm)                 
+        # self.softmax = nn.Softmax(dim=1)
+    def forward(self, inputs):
+        output = self.net(inputs)
+        return F.log_softmax(output)
+    
