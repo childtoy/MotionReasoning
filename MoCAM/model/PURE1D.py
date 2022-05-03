@@ -63,7 +63,6 @@ class Pure1dNet(nn.Module):
         out = self.net2(out)
         out = self.net3(out)
         # out = self.net4(out)
-        print(out.shape)
         # out = self.net5(out)
         out = self.dropout(out)
         out = self.avgPool(out)

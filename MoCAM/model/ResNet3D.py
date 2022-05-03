@@ -3,69 +3,102 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm
 import torch
-
-class Pure3dNet(nn.Module):
-    def __init__(self, n_inputs, n_channels, n_outputs, kernel_size, dilation=1, padding='same', dropout=0.2):
-        super(Pure3dNet, self).__init__()
-        self.conv1_1 = weight_norm(nn.Conv2d(n_inputs, n_channels, 3, stride=1, padding=padding, dilation=dilation))
-        self.conv1_2 = weight_norm(nn.Conv2d(n_channels, n_channels*2, 3, stride=1, padding=padding, dilation=dilation))
-        self.conv1_3 = weight_norm(nn.Conv2d(n_channels*2, n_channels*2, 3, stride=2, padding='valid', dilation=dilation))
+class Conv_block(nn.Module):
+    def __init__(self, in_channels, out_channels, activation=True, **kwargs) -> None:
+        super(Conv_block, self).__init__()
         self.relu = nn.ReLU()
+        self.conv = nn.Conv2d(in_channels, out_channels, **kwargs) # kernel size = ...
+        self.batchnorm = nn.BatchNorm2d(out_channels)
+        self.activation = activation
 
-        self.conv2_1 = weight_norm(nn.Conv2d(n_channels*2, n_channels*2, kernel_size, stride=1, padding=padding, dilation=dilation))
-        self.conv2_2 = weight_norm(nn.Conv2d(n_channels*2, n_channels*2, kernel_size, stride=1, padding=padding, dilation=dilation))
-        self.conv2_3 = weight_norm(nn.Conv2d(n_channels*2, n_channels*2, kernel_size, stride=2, padding='valid', dilation=dilation))
-
-        self.conv3_1 = weight_norm(nn.Conv2d(n_channels*2, n_channels*4, kernel_size, stride=1, padding=padding, dilation=dilation))
-        self.conv3_2 = weight_norm(nn.Conv2d(n_channels*4, n_channels*4, kernel_size, stride=1, padding=padding, dilation=dilation))
-        self.conv3_3 = weight_norm(nn.Conv2d(n_channels*4, n_channels*4, kernel_size, stride=2, padding='valid', dilation=dilation))
-
-        # self.conv4_1 = weight_norm(nn.Conv1d(n_inputs*2, n_inputs*2, kernel_size, stride=1, padding=padding, dilation=dilation))
-        # self.conv4_2 = weight_norm(nn.Conv1d(n_inputs*2, n_inputs*1, kernel_size, stride=1, padding=padding, dilation=dilation))
-        # self.conv4_3 = weight_norm(nn.Conv1d(n_inputs*1, n_inputs*1, kernel_size, stride=2, padding='valid', dilation=dilation))
-
-        # self.conv5_1 = weight_norm(nn.Conv1d(n_inputs*1, n_inputs*1, kernel_size, stride=1, padding=padding, dilation=dilation))
-        # self.conv5_2 = weight_norm(nn.Conv1d(int(n_inputs*1),int(n_inputs*0.5), kernel_size, stride=1, padding=padding, dilation=dilation))
-        # self.conv5_3 = weight_norm(nn.Conv1d(int(n_inputs*0.5), int(n_inputs*0.5), kernel_size, stride=1, padding=padding, dilation=dilation))
-
-        self.dropout = nn.Dropout(dropout)
-        # self.avgPool = nn.AvgPool1d(7)
-        self.linear = nn.Linear(n_channels*4, n_outputs)
-        self.net1 = nn.Sequential(self.conv1_1, self.relu, self.conv1_2, self.relu, self.conv1_3, self.relu)
-        self.net2 = nn.Sequential(self.conv2_1, self.relu, self.conv2_2, self.relu, self.conv2_3, self.relu)
-        self.net3 = nn.Sequential(self.conv3_1, self.relu, self.conv3_2, self.relu, self.conv3_3, self.relu)
-        # self.net4 = nn.Sequential(self.conv4_1, self.relu, self.conv4_2, self.relu, self.conv4_3, self.relu)                                  
-        # self.net5 = nn.Sequential(self.conv5_1, self.relu, self.conv5_2, self.relu, self.conv5_3, self.relu)
-                                    
-        # self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
-    #     self.init_weights()
-
-    def init_weights(self):
-        self.conv1_1.weight.data.normal_(0, 0.01)
-        self.conv1_2.weight.data.normal_(0, 0.01)
-        self.conv1_3.weight.data.normal_(0, 0.01)
-        self.conv2_1.weight.data.normal_(0, 0.01)
-        self.conv2_2.weight.data.normal_(0, 0.01)
-        self.conv2_3.weight.data.normal_(0, 0.01)
-        self.conv3_1.weight.data.normal_(0, 0.01)
-        self.conv3_2.weight.data.normal_(0, 0.01)
-        self.conv3_3.weight.data.normal_(0, 0.01)
-        # self.conv4_1.weight.data.normal_(0, 0.01)
-        # self.conv4_2.weight.data.normal_(0, 0.01)
-        # self.conv4_3.weight.data.normal_(0, 0.01)
-        # self.conv5_1.weight.data.normal_(0, 0.01)
-        # self.conv5_2.weight.data.normal_(0, 0.01)
-        # self.conv5_3.weight.data.normal_(0, 0.01)
-        
-   
     def forward(self, x):
-        out = self.net1(x)
-        out = self.net2(out)
-        out = self.net3(out)
-        # out = self.net4(out)
-        # out = self.net5(out)
-        out = self.dropout(out)
-        out = F.adaptive_avg_pool2d(out, (1, 1))
-        out = torch.flatten(out, 1)
-        output = self.linear(out)
-        return output
+        if not self.activation:
+            return self.batchnorm(self.conv(x))
+        return self.relu(self.batchnorm(self.conv(x))
+class Res_block(nn.Module):
+    def __init__(self, in_channels, red_channels, out_channels, is_plain=False):
+        super(Res_block,self).__init__()
+        self.relu = nn.ReLU()
+        self.is_plain = is_plain
+        
+        if in_channels==64:
+            self.convseq = nn.Sequential(
+                                    Conv_block(in_channels, red_channels, kernel_size=1, padding=0),
+                                    Conv_block(red_channels, red_channels, kernel_size=3, padding=1),
+                                    Conv_block(red_channels, out_channels, activation=False, kernel_size=1, padding=0)
+            )
+            self.iden = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
+        elif in_channels == out_channels:
+            self.convseq = nn.Sequential(
+                                    Conv_block(in_channels, red_channels, kernel_size=1, padding=0),
+                                    Conv_block(red_channels, red_channels, kernel_size=3, padding=1),
+                                    Conv_block(red_channels, out_channels, activation=False, kernel_size=1, padding=0)
+            )
+            self.iden = nn.Identity()
+        else:
+            self.convseq = nn.Sequential(
+                                    Conv_block(in_channels, red_channels, kernel_size=1, padding=0, stride=2),
+                                    Conv_block(red_channels, red_channels, kernel_size=3, padding=1),
+                                    Conv_block(red_channels, out_channels, activation=False, kernel_size=1, padding=0)
+                
+            )
+            self.iden = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2)
+        
+    def forward(self, x):
+        y = self.convseq(x)
+        if self.is_plain:
+            x = y
+        else:
+            x = y + self.iden(x)
+        x = self.relu(x)  # relu(skip connection)
+        return x
+
+class ResNet(nn.Module):
+    def __init__(self, in_channels=3 , num_classes=1000, is_plain=False):
+        self.num_classes = num_classes
+        super(ResNet, self).__init__()
+        self.conv1 = Conv_block(in_channels=in_channels, out_channels=64, kernel_size=7, stride=2, padding=3)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        
+        self.conv2_x = nn.Sequential(
+                                        Res_block(64, 64, 256, is_plain),
+                                        Res_block(256, 64, 256, is_plain),
+                                        Res_block(256, 64, 256, is_plain)
+        )
+        
+        self.conv3_x = nn.Sequential(
+                                        Res_block(256, 128, 512, is_plain),
+                                        Res_block(512, 128, 512, is_plain),
+                                        Res_block(512, 128, 512, is_plain),
+                                        Res_block(512, 128, 512, is_plain)
+        )
+
+        self.conv4_x = nn.Sequential(
+                                        Res_block(512, 256, 1024, is_plain),
+                                        Res_block(1024, 256, 1024, is_plain),
+                                        Res_block(1024, 256, 1024, is_plain),
+                                        Res_block(1024, 256, 1024, is_plain),
+                                        Res_block(1024, 256, 1024, is_plain),
+                                        Res_block(1024, 256, 1024, is_plain)
+        )
+        
+        self.conv5_x = nn.Sequential(
+                                        Res_block(1024, 512, 2048, is_plain),
+                                        Res_block(2048, 512, 2048, is_plain),
+                                        Res_block(2048, 512, 2048, is_plain),
+        )
+
+        self.avgpool = nn.AvgPool2d(kernel_size=7, stride=1)
+        self.fc = nn.Linear(2048,num_classes)
+
+    def forward(self,x):
+        x = self.conv1(x)
+        x = self.maxpool1(x)
+        x = self.conv2_x(x)
+        x = self.conv3_x(x)
+        x = self.conv4_x(x)
+        x = self.conv5_x(x)
+        x = F.adaptive_avg_pool2d(out, (1, 1))
+        x = x.reshape(x.shape[0], -1)
+        x = self.fc(x)
+        return x        
