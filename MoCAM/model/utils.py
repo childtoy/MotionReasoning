@@ -383,17 +383,21 @@ class MultiCropWrapper(nn.Module):
         self.backbone = backbone
         self.head = head
 
-    def forward(self, x):
+    def forward(self, x, valid_length, sub_seq):
         # convert to list
         if not isinstance(x, list):
             x = [x]
+        if not isinstance(valid_length, list):
+            valid_length = [valid_length]
+
         idx_crops = torch.cumsum(torch.unique_consecutive(
             torch.tensor([inp.shape[-1] for inp in x]),
             return_counts=True,
         )[1], 0)
         start_idx, output = 0, torch.empty(0).to(x[0].device)
+
         for end_idx in idx_crops:
-            _out = self.backbone(torch.cat(x[start_idx: end_idx]))
+            _out = self.backbone(torch.cat(x[start_idx: end_idx]), torch.cat(valid_length[start_idx: end_idx]), sub_seq)
             # The output is a tuple with XCiT model. See:
             # https://github.com/facebookresearch/xcit/blob/master/xcit.py#L404-L405
             if isinstance(_out, tuple):
