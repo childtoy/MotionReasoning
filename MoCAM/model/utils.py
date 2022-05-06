@@ -254,9 +254,9 @@ def init_distributed_mode(args):
     # we manually add MASTER_ADDR and MASTER_PORT to env variables
     elif torch.cuda.is_available():
         print('Will run the code on one GPU.')
-        args.rank, args.gpu, args.world_size = 0, 0, 1
+        args.rank, args.gpu, args.world_size = 0, 1, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29500'
+        os.environ['MASTER_PORT'] = '29600'
     else:
         print('Does not support training without GPU.')
         sys.exit(1)
@@ -365,6 +365,41 @@ class LARS(torch.optim.Optimizer):
                 mu.mul_(g['momentum']).add_(dp)
 
                 p.add_(mu, alpha=-g['lr'])
+
+def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
+    """
+    Re-start from checkpoint
+    """
+    if not os.path.isfile(ckp_path):
+        return
+    print("Found checkpoint at {}".format(ckp_path))
+
+    # open checkpoint file
+    checkpoint = torch.load(ckp_path, map_location="cpu")
+
+    # key is what to look for in the checkpoint file
+    # value is the object to load
+    # example: {'state_dict': model}
+    for key, value in kwargs.items():
+        if key in checkpoint and value is not None:
+            try:
+                msg = value.load_state_dict(checkpoint[key], strict=False)
+                print("=> loaded '{}' from checkpoint '{}' with msg {}".format(key, ckp_path, msg))
+            except TypeError:
+                try:
+                    msg = value.load_state_dict(checkpoint[key])
+                    print("=> loaded '{}' from checkpoint: '{}'".format(key, ckp_path))
+                except ValueError:
+                    print("=> failed to load '{}' from checkpoint: '{}'".format(key, ckp_path))
+        else:
+            print("=> key '{}' not found in checkpoint: '{}'".format(key, ckp_path))
+
+    # re load variable important for the run
+    if run_variables is not None:
+        for var_name in run_variables:
+            if var_name in checkpoint:
+                run_variables[var_name] = checkpoint[var_name]
+
 
 
 class MultiCropWrapper(nn.Module):
@@ -607,3 +642,135 @@ def multi_scale(samples, model):
     v /= 3
     v /= v.norm()
     return v
+
+
+def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_name, patch_size):
+    if os.path.isfile(pretrained_weights):
+        state_dict = torch.load(pretrained_weights, map_location="cpu")['student']
+        if checkpoint_key is not None and checkpoint_key in state_dict:
+            print(f"Take key {checkpoint_key} in provided checkpoint dict")
+            state_dict = state_dict[checkpoint_key]
+        # remove `module.` prefix
+        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        # remove `backbone.` prefix induced by multicrop wrapper
+        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+        msg = model.load_state_dict(state_dict, strict=False)
+        print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
+    else:
+        print("Please use the `--pretrained_weights` argument to indicate the path of the checkpoint to evaluate.")
+        url = None
+        if model_name == "vit_small" and patch_size == [30,1]:
+            url = "runs/train/humanact12_dino_patch2_512201/train-20.pt"
+        elif model_name == "vit_small" and patch_size == 8:
+            url = "dino_deitsmall8_pretrain/dino_deitsmall8_pretrain.pth"
+        elif model_name == "vit_base" and patch_size == 16:
+            url = "dino_vitbase16_pretrain/dino_vitbase16_pretrain.pth"
+        elif model_name == "vit_base" and patch_size == 8:
+            url = "dino_vitbase8_pretrain/dino_vitbase8_pretrain.pth"
+        elif model_name == "xcit_small_12_p16":
+            url = "dino_xcit_small_12_p16_pretrain/dino_xcit_small_12_p16_pretrain.pth"
+        elif model_name == "xcit_small_12_p8":
+            url = "dino_xcit_small_12_p8_pretrain/dino_xcit_small_12_p8_pretrain.pth"
+        elif model_name == "xcit_medium_24_p16":
+            url = "dino_xcit_medium_24_p16_pretrain/dino_xcit_medium_24_p16_pretrain.pth"
+        elif model_name == "xcit_medium_24_p8":
+            url = "dino_xcit_medium_24_p8_pretrain/dino_xcit_medium_24_p8_pretrain.pth"
+        elif model_name == "resnet50":
+            url = "dino_resnet50_pretrain/dino_resnet50_pretrain.pth"
+        if url is not None:
+            print("Since no pretrained weights have been provided, we load the reference pretrained DINO weights.")
+            state_dict = torch.hub.load_state_dict_from_url(url="https://dl.fbaipublicfiles.com/dino/" + url)
+            model.load_state_dict(state_dict, strict=True)
+        else:
+            print("There is no reference weights available for this model => We use random weights.")
+
+
+class MetricLogger(object):
+    def __init__(self, delimiter="\t"):
+        self.meters = defaultdict(SmoothedValue)
+        self.delimiter = delimiter
+
+    def update(self, **kwargs):
+        for k, v in kwargs.items():
+            if isinstance(v, torch.Tensor):
+                v = v.item()
+            assert isinstance(v, (float, int))
+            self.meters[k].update(v)
+
+    def __getattr__(self, attr):
+        if attr in self.meters:
+            return self.meters[attr]
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+        raise AttributeError("'{}' object has no attribute '{}'".format(
+            type(self).__name__, attr))
+
+    def __str__(self):
+        loss_str = []
+        for name, meter in self.meters.items():
+            loss_str.append(
+                "{}: {}".format(name, str(meter))
+            )
+        return self.delimiter.join(loss_str)
+
+    def synchronize_between_processes(self):
+        for meter in self.meters.values():
+            meter.synchronize_between_processes()
+
+    def add_meter(self, name, meter):
+        self.meters[name] = meter
+
+    def log_every(self, iterable, print_freq, header=None):
+        i = 0
+        if not header:
+            header = ''
+        start_time = time.time()
+        end = time.time()
+        iter_time = SmoothedValue(fmt='{avg:.6f}')
+        data_time = SmoothedValue(fmt='{avg:.6f}')
+        space_fmt = ':' + str(len(str(len(iterable)))) + 'd'
+        if torch.cuda.is_available():
+            log_msg = self.delimiter.join([
+                header,
+                '[{0' + space_fmt + '}/{1}]',
+                'eta: {eta}',
+                '{meters}',
+                'time: {time}',
+                'data: {data}',
+                'max mem: {memory:.0f}'
+            ])
+        else:
+            log_msg = self.delimiter.join([
+                header,
+                '[{0' + space_fmt + '}/{1}]',
+                'eta: {eta}',
+                '{meters}',
+                'time: {time}',
+                'data: {data}'
+            ])
+        MB = 1024.0 * 1024.0
+        for obj in iterable:
+            data_time.update(time.time() - end)
+            yield obj
+            iter_time.update(time.time() - end)
+            if i % print_freq == 0 or i == len(iterable) - 1:
+                eta_seconds = iter_time.global_avg * (len(iterable) - i)
+                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+                if torch.cuda.is_available():
+                    print(log_msg.format(
+                        i, len(iterable), eta=eta_string,
+                        meters=str(self),
+                        time=str(iter_time), data=str(data_time),
+                        memory=torch.cuda.max_memory_allocated() / MB))
+                else:
+                    print(log_msg.format(
+                        i, len(iterable), eta=eta_string,
+                        meters=str(self),
+                        time=str(iter_time), data=str(data_time)))
+            i += 1
+            end = time.time()
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print('{} Total time: {} ({:.6f} s / it)'.format(
+            header, total_time_str, total_time / len(iterable)))
+        
