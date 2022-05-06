@@ -205,8 +205,8 @@ class MotionTransformer(nn.Module):
         x = self.norm(x)
         return x[:, 0]
 
-    def get_last_selfattention(self, x):
-        x = self.prepare_tokens(x)
+    def get_last_selfattention(self, x, valid_len, seq_len):
+        x = self.prepare_tokens(x,valid_len, seq_len)
         for i, blk in enumerate(self.blocks):
             if i < len(self.blocks) - 1:
                 x = blk(x)
@@ -214,8 +214,8 @@ class MotionTransformer(nn.Module):
                 # return attention of the last block
                 return blk(x, return_attention=True)
 
-    def get_intermediate_layers(self, x, n=1):
-        x = self.prepare_tokens(x)
+    def get_intermediate_layers(self, x,valid_len, seq_len, n=1):
+        x = self.prepare_tokens(x,valid_len, seq_len)
         # we return the output tokens from the `n` last blocks
         output = []
         for i, blk in enumerate(self.blocks):
