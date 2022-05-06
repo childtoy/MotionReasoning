@@ -95,9 +95,9 @@ class HumanAct12Dataset(Dataset):
     def __getitem__(self, idx):
         query = {}
         query['rotation_6d_pose_list'] = self.padded_dataset['rotation_6d_pose_list'][idx]
-        query['labels'] = self.padded_dataset['labels'][idx]
         query['valid_length_list'] = self.padded_dataset['valid_length_list'][idx]
         query['proc_label_list'] = self.padded_dataset['labels'][idx]
+        query['labels'] = self.padded_dataset['labels'][idx]
         return query
 
 class HumanAct12Dataset2(Dataset):
@@ -169,9 +169,12 @@ class HumanAct12Dataset2(Dataset):
     def __getitem__(self, idx):
         query = {}
         query['rotation_6d_pose_list'] = self.padded_dataset['rotation_6d_pose_list'][idx]
-        query['labels'] = self.padded_dataset['labels'][idx]
         query['valid_length_list'] = self.padded_dataset['valid_length_list'][idx]
         query['proc_label_list'] = self.padded_dataset['labels'][idx]
+        query['labels'] = self.padded_dataset['labels'][idx]
+        
         if self.transform is not None: 
             sample = self.transform(query)
+        else : 
+            sample = query
         return sample        
