@@ -349,7 +349,7 @@ def train(opt):
                           
     # Loggers
     #init wandb
-    wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
+    # wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load EmotionMoCap Dataset
     train_dataset = HumanAct12Dataset(data_path="../dataset/experiment/HumanAct12Poses/humanact12poses.pkl", motion_length=150, dataset="train")
@@ -368,7 +368,7 @@ def train(opt):
         patch_size=opt.patch_size,
         drop_path_rate=0.1,  # stochastic depth
     )
-    teacher = mits.__dict__['vit_tiny'](patch_size=[5,1])
+    teacher = mits.__dict__['vit_tiny'](patch_size=[30,1])
     embed_dim = student.embed_dim
     
     student = utils.MultiCropWrapper(student, DINOHead(
@@ -490,17 +490,18 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             # motion_local4 = lerp_input_repr(motions, valid_length, 1,11, 150)
 
             B,T,J,C = motions.shape
-            motion_local = torch.cat([motions,motion_local1, motion_local3], axis=0)
-            data_local = torch.cat([motions, motion_local], axis=0)
+            # motion_local = torch.cat([motions,motion_local1, motion_local3], axis=0)
+            data_local = torch.cat([motions, motion_local1, motion_local3], axis=0)
             data_global = motions
             data_local = data_local.permute(0,3,1,2)
             data_global = data_global.permute(0,3,1,2)
             # motions = motions.unsqueeze(1)
             # motions_flip = motions_flip.permute(0,3,1,2)
             # motions_flip = motions_flip.unsqueeze(1)
-            teacher_output = teacher(data_global.cuda())  # only the 2 global views pass through the teacher
+            teacher_output = teacher(data_global.cuda(), valid_length.cuda(),30)  # only the 2 global views pass through the teacher
             # student_output = student(torch.cat([motions,motions_flip], axis=0))
-            student_output = student(data_local.cuda())
+            local_valid_len = valid_length.repeat(3)
+            student_output = student(data_local.cuda(), local_valid_len.cuda(), 30)
             loss = dino_loss(student_output, teacher_output, epoch)
 
         if not math.isfinite(loss.item()):
@@ -555,9 +556,9 @@ def parse_opt():
     # parser.add_argument('--device', default='2', help='cuda device')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='humanact12_dino_patch2_512', help='save to project/name')
-    parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
+    parser.add_argument('--save_interval', type=int, default=5, help='Log model after every "save_period" epoch')
     parser.add_argument('--lr', type=float, default=0.001, help='generator_learning_rate')
-    parser.add_argument('--patch_size', default=[5,1], type=list, help="""Size in pixels
+    parser.add_argument('--patch_size', default=[30,1], type=list, help="""Size in pixels
         of input square patches - default 16 (for 16x16 patches). Using smaller
         values leads to better performance but requires more memory. Applies only
         for ViTs (vit_tiny, vit_small and vit_base). If <16, we recommend disabling

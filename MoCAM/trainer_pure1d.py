@@ -24,8 +24,8 @@ def train(opt, device):
     wdir.mkdir(parents=True, exist_ok=True)
 
     # Save run settings
-    with open(save_dir / 'opt.yaml', 'w') as f:
-        yaml.safe_dump(vars(opt), f, sort_keys=True)
+    # with open(save_dir / 'opt.yaml', 'w') as f:
+    #     yaml.safe_dump(vars(opt), f, sort_keys=True)
 
     epochs = opt.epochs
     save_interval = opt.save_interval
@@ -40,11 +40,11 @@ def train(opt, device):
     emotion_data_loader = DataLoader(emotion_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     n_classes = 7
-    input_channels = 105
+    input_channels = 35
     seq_length = opt.window
     epochs = opt.epochs
     n_hid = 70
-    n_level = 4
+    n_level = 3
     channel_sizes = [n_hid] * n_level
     kernel_size = 5
     model = PURE1D(input_channels, n_classes, kernel_size=kernel_size, dropout=0.2)
@@ -58,17 +58,15 @@ def train(opt, device):
         pbar = tqdm(emotion_data_loader, position=1, desc="Batch")
         for batch in pbar:
             local_q = batch["local_q"].to(device)
-            q_vel = batch["q_vel"].to(device) 
-            q_acc = batch["q_acc"].to(device) 
             labels = batch["labels"].to(device)
-            data = torch.cat([local_q, q_vel, q_acc], axis=2)
-            # data = local_q
+            # data = torch.cat([local_q, q_vel, q_acc], axis=2)
+            data = local_q
             data = data.permute(0,2,1)
             output = model(data)
             optim.zero_grad()      
             loss = F.nll_loss(output, labels)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=False)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=False)
             optim.step()
 
         # Log
@@ -98,14 +96,14 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--data_path', type=str, default='/home/taehyun/workspace/childtoy/MotionReasoning/dataset/mocap_emotion_rig', help='Mat dataset path')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_mocam/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_mocam_80_All_Class_addR2/', help='path to save pickled processed data')
     parser.add_argument('--window', type=int, default=80, help='window')
     parser.add_argument('--wandb_pj_name', type=str, default='MoCAM', help='project name')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size')
-    parser.add_argument('--epochs', type=int, default=200)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--device', default='0', help='cuda device')
     parser.add_argument('--entity', default=None, help='W&B entity')
-    parser.add_argument('--exp_name', default='exp', help='save to project/name')
+    parser.add_argument('--exp_name', default='pure1d_localq', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=10, help='Log model after every "save_period" epoch')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='generator_learning_rate')
 

@@ -683,13 +683,15 @@ class  MoT_patch2_seg(nn.Module):
         x = self.to_latent(x)
         return self.mlp_head(x)                     
 
+
 class  MoT_patch2_seg_chn(nn.Module):
     def __init__(self, *, seq_len=80, num_joints=35, sub_seq=20, num_classes, dim, depth, heads, mlp_dim, pool = 'cls', channels =6, dim_head = 64, dropout = 0., emb_dropout = 0.):
         super().__init__()
-        image_height = seq_len
-        image_width = num_joints
-        patch_height = sub_seq
-        patch_width = 1
+        image_height = num_joints
+        image_width = seq_len
+        patch_height = 1
+        patch_width = sub_seq
+        self.sub_seq = sub_seq        
         assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
 
         num_patches = (image_height // patch_height) * (image_width // patch_width)
@@ -720,18 +722,20 @@ class  MoT_patch2_seg_chn(nn.Module):
         )
 
     def forward(self, motion, valid_length, return_attention=False):
+        B, nc, h, w = motion.shape
         x = self.to_patch_embedding(motion)
         device = x.device
-
+        sub_seq = self.sub_seq
         b, n, _ = x.shape
         pos_x = torch.arange(n+1, device=x.device).repeat((b, 1))
 
         cls_tokens = repeat(self.cls_token, '() n d -> b n d', b = b)
         valid_segment = []
         for i in valid_length:
-            valid_segment.append([1] + [1] * torch.div(i, 5, rounding_mode='floor') + [0] * (n - torch.div(i, 5, rounding_mode='floor')))
+            if i == 150 :
+                i = 149
+            valid_segment.append([1] + h*([1] * torch.ceil(torch.div(i, sub_seq)).int() + [0] * (int(w/sub_seq) - torch.ceil(torch.div(i, sub_seq)).int())))
         seg_tensor = torch.IntTensor(valid_segment).to(device)
-        
         x = torch.cat((cls_tokens, x), dim=1)
         x = x + self.pos_emb(pos_x) + self.val_emb(seg_tensor) #
         # x += self.pos_embedding[:, :(n + 1)] + self.val_emb(seg_tensor)
@@ -749,12 +753,82 @@ class  MoT_patch2_seg_chn(nn.Module):
         x = self.to_latent(x)
         return self.mlp_head(x)    
 
+class  MoT_patch2_seg_chn_sj(nn.Module):
+    def __init__(self, *, seq_len=80, num_joints=35, sub_seq=20, num_classes, dim, depth, heads, mlp_dim, pool = 'cls', channels =6, dim_head = 64, dropout = 0., emb_dropout = 0.):
+        super().__init__()
+        image_height = seq_len
+        image_width = num_joints
+        patch_height = sub_seq
+        patch_width = 1
+        self.sub_seq = sub_seq        
+        assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
+
+        num_patches = (image_height // patch_height) * (image_width // patch_width)
+        patch_dim = channels * patch_height * patch_width
+        
+        assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
+
+        self.to_patch_embedding = nn.Sequential(
+            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_height, p2 = patch_width),
+            nn.Linear(patch_dim, dim),
+        )
+
+        # self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
+        self.pos_emb = nn.Embedding(num_patches + 1, dim)
+        self.val_emb = nn.Embedding(num_patches + 1, dim)
+
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+        self.dropout = nn.Dropout(emb_dropout)
+
+        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
+
+        self.pool = pool
+        self.to_latent = nn.Identity()
+
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, num_classes)
+        )
+
+    def forward(self, motion, valid_length, return_attention=False):
+        B, nc, h, w = motion.shape
+        x = self.to_patch_embedding(motion)
+        device = x.device
+
+        b, n, _ = x.shape
+        pos_x = torch.arange(n+1, device=x.device).repeat((b, 1))
+
+        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b = b)
+        # valid_segment = []
+        # for i in valid_length:
+        #     valid_segment.append([1] + [1] * torch.div(i, 5, rounding_mode='floor') + [0] * (n - torch.div(i, 5, rounding_mode='floor')))
+        # seg_tensor = torch.IntTensor(valid_segment).to(device)
+        
+        x = torch.cat((cls_tokens, x), dim=1)
+        # x = x + self.pos_emb(pos_x) + self.val_emb(seg_tensor) #
+        x = x + self.pos_emb(pos_x)
+        # x += self.pos_embedding[:, :(n + 1)] + self.val_emb(seg_tensor)
+        x = self.dropout(x)
+        # print('transformer', x.shape)
+
+        x = self.transformer(x, return_attention)
+        # print(return_attention)
+        # print('transformer', x.shape)
+
+        if return_attention:
+            return x
+        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+
+        x = self.to_latent(x)
+        return self.mlp_head(x)                     
+
 class  MoT_patch2_seg_chn_moe(nn.Module):
     def __init__(self, *, seq_len=80, num_joints=35, sub_seq=20, num_classes, dim, depth, heads, mlp_dim, pool = 'cls', channels =6, dim_head = 64, dropout = 0., emb_dropout = 0.):
         super().__init__()
         image_height = seq_len
         image_width = num_joints
         patch_height = sub_seq
+
         patch_width = 1
         assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
 
@@ -795,9 +869,15 @@ class  MoT_patch2_seg_chn_moe(nn.Module):
 
         cls_tokens = repeat(self.cls_token, '() n d -> b n d', b = b)
         valid_segment = []
+        # valid_segment = []
         for i in valid_length:
-            valid_segment.append([1] + [1] * torch.div(i, 5, rounding_mode='floor') + [0] * (n - torch.div(i, 5, rounding_mode='floor')))
+            if i == 150 :
+                i = 149
+            valid_segment.append([1] + h*([1] * torch.ceil(torch.div(i, sub_seq)).int() + [0] * (int(w/sub_seq) - torch.ceil(torch.div(i, sub_seq)).int())))
         seg_tensor = torch.IntTensor(valid_segment).to(device)
+        # for i in valid_length:
+        #     valid_segment.append([1] + [1] * torch.div(i, 5, rounding_mode='floor') + [0] * (n - torch.div(i, 5, rounding_mode='floor')))
+        # seg_tensor = torch.IntTensor(valid_segment).to(device)
         
         x = torch.cat((cls_tokens, x), dim=1)
         x = x + self.pos_emb(pos_x) + self.val_emb(seg_tensor) #
