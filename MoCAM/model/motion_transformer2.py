@@ -99,25 +99,26 @@ class Block(nn.Module):
 class PatchEmbed(nn.Module):
     """ Motion to Patch Embedding
     """
-    def __init__(self, motion_size=[150,22], patch_size=[30,1], in_chans=6, embed_dim=768):
+    def __init__(self, motion_size=[150,22], patch_size=[10,1], in_chans=6, embed_dim=768):
         super().__init__()
         num_patches = (motion_size[0] // patch_size[0]) * (motion_size[1] // patch_size[1])
         self.motion_size = motion_size
         self.patch_size = patch_size
         self.num_patches = num_patches
+        # if teacher : 
+        #     self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)            
+        # else : 
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x = self.proj(x)
-        x = x.flatten(2)
-        x = x.transpose(1, 2)
+        x = self.proj(x).flatten(2).transpose(1, 2)
         return x
 
 
 class MotionTransformer(nn.Module):
     """ Motion Transformer """
-    def __init__(self, motion_size=[150,22], patch_size=[30,1], in_chans=6, num_classes=0, embed_dim=768, depth=12,
+    def __init__(self, motion_size=[150,22], patch_size=[10,1], in_chans=6, num_classes=0, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
                  drop_path_rate=0., norm_layer=nn.LayerNorm, **kwargs):
         super().__init__()
@@ -128,11 +129,7 @@ class MotionTransformer(nn.Module):
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
-        # self.val_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
-        self.val_embed = nn.Embedding(num_patches + 1, embed_dim)
-
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -181,25 +178,21 @@ class MotionTransformer(nn.Module):
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
 
-    def prepare_tokens(self, x, valid_length, sub_seq):
+    def prepare_tokens(self, x):
         B, nc, w, h = x.shape
         x = self.patch_embed(x)  # patch linear embedding
+
         # add the [CLS] token to the embed patch tokens
         cls_tokens = self.cls_token.expand(B, -1, -1)
-        valid_segment = []
-        for i in valid_length:
-            if i == 150 :
-                i = 149
-            valid_segment.append([1] + h*([1] * torch.ceil(torch.div(i, sub_seq)).int() + [0] * (int(w/sub_seq) - torch.ceil(torch.div(i, sub_seq)).int())))
-        seg_tensor = torch.IntTensor(valid_segment).cuda()
         x = torch.cat((cls_tokens, x), dim=1)
+
         # add positional encoding to each token
-        x = x + self.interpolate_pos_encoding(x, w, h) + self.val_embed(seg_tensor)
-        
+        x = x + self.interpolate_pos_encoding(x, w, h)
+
         return self.pos_drop(x)
 
-    def forward(self, x, valid_length, sub_seq):
-        x = self.prepare_tokens(x, valid_length, sub_seq)
+    def forward(self, x):
+        x = self.prepare_tokens(x)
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)
@@ -225,21 +218,21 @@ class MotionTransformer(nn.Module):
         return output
 
 
-def vit_tiny(patch_size=[30,1], **kwargs):
+def vit_tiny(patch_size=[5,1], **kwargs):
     model = MotionTransformer(
-        patch_size=patch_size, embed_dim=256, depth=8, num_heads=8, mlp_ratio=2,
+        patch_size=patch_size, embed_dim=384, depth=12, num_heads=12, mlp_ratio=2,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 
-def vit_small(patch_size=[30,1], **kwargs):
+def vit_small(patch_size=[5,1], **kwargs):
     model = MotionTransformer(
         patch_size=patch_size, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 
-def vit_base(patch_size=[30,1], **kwargs):
+def vit_base(patch_size=[5,1], **kwargs):
     model = MotionTransformer(
         patch_size=patch_size, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)

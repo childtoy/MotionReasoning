@@ -23,7 +23,7 @@ import torch.backends.cudnn as cudnn
 from torchvision import datasets
 from torchvision import transforms as pth_transforms
 
-import model.utils as utils
+import model.utils2 as utils
 import model.motion_transformer as mits
 from motion.dataset.humanact12 import HumanAct12Dataset2, humanact12_label_map
 from sklearn.preprocessing import LabelEncoder
@@ -92,12 +92,6 @@ def eval_linear(args):
         momentum=0.9,
         weight_decay=0, # we do not apply weight decay
     )
-    #optimizer = torch.optim.SGD(
-    #    linear_classifier.parameters(),
-    #    lr=args.lr, # linear scaling rule
-    #    momentum=0.9,
-    #    weight_decay=0, # we do not apply weight decay
-    #)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0)
 
     # Optionally resume from a checkpoint

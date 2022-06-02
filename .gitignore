@@ -1,6 +1,9 @@
 dataset
 data
 runs
+smpl_model
+dmpl_model
+*.zip
 *.npz
 *.mat
 *.bvh

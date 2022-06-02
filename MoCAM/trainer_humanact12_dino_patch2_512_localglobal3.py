@@ -22,7 +22,7 @@ from motion.dataset.humanact12 import HumanAct12Dataset, humanact12_label_map
 
 from data_proc.utils import increment_path
 import torch
-import model.motion_transformer as mits
+import model.motion_transformer2 as mits
 from model.motion_transformer import DINOHead
 from model.utils import bool_flag
 import model.utils as utils
@@ -349,7 +349,7 @@ def train(opt):
                           
     # Loggers
     #init wandb
-    # wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
+    wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load EmotionMoCap Dataset
     train_dataset = HumanAct12Dataset(data_path="../dataset/experiment/HumanAct12Poses/humanact12poses.pkl", motion_length=150, dataset="train")
@@ -385,7 +385,7 @@ def train(opt):
 
     teacher_without_ddp = teacher
 
-    student = nn.parallel.DistributedDataParallel(student, device_ids=[0])
+    student = nn.parallel.DistributedDataParallel(student, device_ids=[1])
     # teacher and student start with the same weights
     teacher_without_ddp.load_state_dict(student.module.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients
@@ -573,21 +573,21 @@ def parse_opt():
         help="""Whether or not to weight normalize the last layer of the DINO head.
         Not normalizing leads to better performance but can make the training unstable.
         In our experiments, we typically set this paramater to False with vit_small and True with vit_base.""")
-    parser.add_argument('--momentum_teacher', default=0.996, type=float, help="""Base EMA
+    parser.add_argument('--momentum_teacher', default=0.999, type=float, help="""Base EMA
         parameter for teacher update. The value is increased to 1 during training with cosine schedule.
         We recommend setting a higher value with small batches: for example use 0.9995 with batch size of 256.""")
     parser.add_argument('--use_bn_in_head', default=False, type=bool_flag,
         help="Whether to use batch normalizations in projection head (Default: False)")
     # Temperature teacher parameters
-    parser.add_argument('--warmup_teacher_temp', default=0.04, type=float,
+    parser.add_argument('--warmup_teacher_temp', default=0.001, type=float,
         help="""Initial value for the teacher temperature: 0.04 works well in most cases.
         Try decreasing it if the training loss does not decrease.""")
-    parser.add_argument('--teacher_temp', default=0.04, type=float, help="""Final value (after linear warmup)
+    parser.add_argument('--teacher_temp', default=0.06, type=float, help="""Final value (after linear warmup)
         of the teacher temperature. For most experiments, anything above 0.07 is unstable. We recommend
         starting with the default value of 0.04 and increase this slightly if needed.""")
     parser.add_argument('--warmup_teacher_temp_epochs', default=0, type=int,
         help='Number of warmup epochs for the teacher temperature (Default: 30).')
-    parser.add_argument('--weight_decay', type=float, default=0.04, help="""Initial value of the
+    parser.add_argument('--weight_decay', type=float, default=0.01, help="""Initial value of the
         weight decay. With ViT, a smaller value at the beginning of training works well.""")
     parser.add_argument('--weight_decay_end', type=float, default=0.4, help="""Final value of the
         weight decay. We use a cosine schedule for WD and using a larger decay by

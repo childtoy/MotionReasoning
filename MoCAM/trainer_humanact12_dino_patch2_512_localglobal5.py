@@ -112,10 +112,10 @@ def bool_flag(s):
 
 def lerp_input_repr(input, valid_len, seq_len, mode):
     if mode == 'global':
-        amp_const = np.random.randint(8,12,[1])/10
-        select_const = np.random.randint(5,10,[1])
+        amp_const = np.random.randint(6,14,[1])/10
+        select_const = np.random.randint(1,3,[1])
     else :
-        amp_const = np.random.randint(2,6,[1])/10
+        amp_const = np.random.randint(6,14,[1])/10
         select_const = np.random.randint(5,10,[1])
 
     dataset = input.copy()

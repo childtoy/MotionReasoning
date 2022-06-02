@@ -254,9 +254,9 @@ def init_distributed_mode(args):
     # we manually add MASTER_ADDR and MASTER_PORT to env variables
     elif torch.cuda.is_available():
         print('Will run the code on one GPU.')
-        args.rank, args.gpu, args.world_size = 0, 0, 1
+        args.rank, args.gpu, args.world_size = 0, 1, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29500'
+        os.environ['MASTER_PORT'] = '29600'
     else:
         print('Does not support training without GPU.')
         sys.exit(1)

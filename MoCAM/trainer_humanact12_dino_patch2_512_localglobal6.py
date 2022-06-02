@@ -25,7 +25,7 @@ import torch
 import model.motion_transformer as mits
 from model.motion_transformer import DINOHead
 from model.utils import bool_flag
-import model.utils as utils
+import model.utils2 as utils
 from collections import defaultdict, deque
 import math
 import datetime
@@ -113,9 +113,9 @@ def bool_flag(s):
 def lerp_input_repr(input, valid_len, seq_len, mode):
     if mode == 'global':
         amp_const = np.random.randint(8,12,[1])/10
-        select_const = np.random.randint(5,10,[1])
+        select_const = np.random.randint(1,5,[1])
     else :
-        amp_const = np.random.randint(2,6,[1])/10
+        amp_const = np.random.randint(0,5,[1])/10
         select_const = np.random.randint(5,10,[1])
 
     dataset = input.copy()
@@ -425,7 +425,7 @@ def train(opt):
 
     teacher_without_ddp = teacher
 
-    student = nn.parallel.DistributedDataParallel(student, device_ids=[0])
+    student = nn.parallel.DistributedDataParallel(student, device_ids=[1])
     # teacher and student start with the same weights
     teacher_without_ddp.load_state_dict(student.module.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients

@@ -112,10 +112,10 @@ def bool_flag(s):
 
 def lerp_input_repr(input, valid_len, seq_len, mode):
     if mode == 'global':
-        amp_const = np.random.randint(8,12,[1])/10
-        select_const = np.random.randint(5,10,[1])
+        amp_const = np.random.randint(9,12,[1])/10
+        select_const = np.random.randint(1,5,[1])
     else :
-        amp_const = np.random.randint(2,6,[1])/10
+        amp_const = np.random.randint(9,12,[1])/10
         select_const = np.random.randint(5,10,[1])
 
     dataset = input.copy()
@@ -159,12 +159,17 @@ def lerp_input_repr(input, valid_len, seq_len, mode):
                 freq = f0[idxy[i]] 
                 yx = fft_y[idxy[i]] 
                 coec = yx.real 
-                coes = yx.imag * -1 
-                if i < select_const :     
-                    y_low5 += amp_const*(coec * np.cos(2 * np.pi * freq * x1) + coes * np.sin(2 * np.pi * freq * x1))                
+                coes = yx.imag * -1
+                if mode == 'global':
+                    if i < select_const :     
+                        y_low5 += amp_const*(coec * np.cos(2 * np.pi * freq * x1) + coes * np.sin(2 * np.pi * freq * x1))                
+                    else : 
+                        y_low5 += 0                                       
                 else : 
-                    y_low5 += (coec * np.cos(2 * np.pi * freq * x1) + coes * np.sin(2 * np.pi * freq * x1))                                        
-    
+                    if (i< select_const) and (i > 2) : 
+                        y_low5 += amp_const*(coec * np.cos(2 * np.pi * freq * x1) + coes * np.sin(2 * np.pi * freq * x1))
+                    else : 
+                        y_low5 += 0
             y_low5 = y_low5 + np.mean(data[:valid_len,jt,ax])
                 # print(torch.sum(input[:valid_len,jt,ax]-y_low5))
             data_low5 = y_low5
