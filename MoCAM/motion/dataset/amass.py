@@ -63,11 +63,12 @@ class MotionRetrievalDataset:
         return problem_set
 
 class AMASSDataset(Dataset):
-    def __init__(self, dataset_path, babel_dir, cache_path="tmp/amass_dataset/", dataset="train", target_fps=30, motion_length=150, setaside=['HumanEva', 'SFU']):
+    def __init__(self, dataset_path, babel_dir, cache_path="tmp/amass_dataset/", dataset="train", target_fps=30, motion_length=150, setaside=['HumanEva', 'SFU'], transform=None):
         self.dataset_path = dataset_path
         self.babel_dir = babel_dir
         self.dataset = dataset
         self.setaside = setaside
+        self.transform = transform
 
         self.tmp_path = Path(cache_path)
         self.tmp_path.mkdir(exist_ok=True, parents=True)
@@ -132,7 +133,11 @@ class AMASSFullDataset:
         query = {}
         query["processed_motion"]  = self.processed_motion["processed_motion"][idx]
         query["valid_length"] = self.processed_motion["valid_length"][idx]
-        return query
+        if self.transform is not None: 
+            sample = self.transform(query)
+        else : 
+            sample = query
+        return sample
 
     def __len__(self):
         return len(self.processed_motion["processed_motion"])
