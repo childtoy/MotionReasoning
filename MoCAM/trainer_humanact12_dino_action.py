@@ -18,11 +18,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from motion.dataset.human36m import Human36mDataset, human36m_label_map
-from motion.dataset.humanact12 import HumanAct12Dataset, humanact12_label_map
+from motion.dataset.humanact12 import HumanAct12Dataset2, humanact12_label_map
 
 from data_proc.utils import increment_path
 import torch
-import model.motion_transformer2 as mits
+import model.motion_transformer as mits
 from model.motion_transformer import DINOHead
 from model.utils import bool_flag
 import model.utils as utils
@@ -110,65 +110,70 @@ def bool_flag(s):
         raise argparse.ArgumentTypeError("invalid value for a boolean flag")
 
 
-def lerp_input_repr(input, valid_len, start_amp, end_amp, seq_len):
-    for idx in range(input.shape[0]):
-        dataset = input.clone()
-        data = dataset[idx].clone()
-        output = data.clone()
-        mask_start_frame = 0
-        torch_pi = torch.acos(torch.zeros(1)).item() * 2
-        # torch_pi = torch_pi.to(device)
-        # torch.pi = torch.acos(torch.zeros(1)).item() * 2
-        # data_low5 = input.clone()
-        t = torch.arange(0, valid_len[idx], 1).cuda()
-        fs = valid_len[idx]
-        dt = 1/fs
-        x1 = torch.arange(0, 1, dt).cuda()
-        # nfft = 샘플 개수
-        nfft = torch.tensor(len(x1)).cuda()
-        # df = 주파수 증가량
-        df = torch.tensor(fs/nfft).cuda()
-        k = torch.arange(nfft).cuda()
-        # f = 0부터~최대주파수까지의 범위
-        f = k*df 
-        # 스펙트럼은 중앙을 기준으로 대칭이 되기 때문에 절반만 구함
-        if valid_len[idx] % 2 :
-            nfft_half = torch.trunc(nfft/2).cuda()
-        else : 
-            nfft_half = torch.trunc(nfft/2).cuda()+1
-    #     nfft_half = torch.trunc(nfft/2).to(device)
-        f0 = f[(torch.range(0,nfft_half.long())).long()] 
-        # 증폭값을 두 배로 계산(위에서 1/2 계산으로 인해 에너지가 반으로 줄었기 때문) 
-        if end_amp > int(valid_len[idx]/4):
-            end_amp2 = int(valid_len[idx]/4)
-        else : 
-            end_amp2 = end_amp
-        for jt in range(22):
-            for ax in range(6):
-                    # joint rw1 : 8 , x축
-                y1 = data[:valid_len[idx],jt,ax] - torch.mean(data[:valid_len[idx],jt,ax])
-                fft_y = torch.fft.fft(y1.cuda())/nfft * 2 
-                fft_y0 = fft_y[(torch.range(0,nfft_half.long())).long()]
-                # 벡터(복소수)의 norm 측정(신호 강도)
-                amp = torch.abs(fft_y0)
-                idxy = torch.argsort(-amp)   
-                y_low5 = torch.zeros(nfft).cuda()
-                for i in range(start_amp,end_amp2): 
-                    freq = f0[idxy[i]] 
-                    yx = fft_y[idxy[i]] 
-                    coec = yx.real 
-                    coes = yx.imag * -1 
-                    #if i < 2 :    
-                    y_low5 += (coec * torch.cos(2 * torch_pi * freq * x1) + coes * torch.sin(2 * torch_pi * freq * x1))                
-        
-                y_low5 = y_low5 + torch.mean(data[:valid_len[idx],jt,ax])
-                    # print(torch.sum(input[:valid_len,jt,ax]-y_low5))
-                data_low5 = y_low5
-                if valid_len[idx] % 2:
-                    output[:valid_len[idx], jt:jt+1,ax] = data_low5[:valid_len[idx]].unsqueeze(1)
+def lerp_input_repr(input, valid_len, seq_len, mode):
+    if mode == 'global':
+        amp_const = np.random.randint(8,12,[1])/10
+        select_const = np.random.randint(5,10,[1])
+    else :
+        amp_const = np.random.randint(2,6,[1])/10
+        select_const = np.random.randint(5,10,[1])
+
+    dataset = input.copy()
+    data = dataset.copy()
+    output = data.copy()
+    mask_start_frame = 0
+    # torch_pi = np.acos(np.zeros(1)).item() * 2
+    # torch_pi = torch_pi.to(device)
+    # torch.pi = torch.acos(torch.zeros(1)).item() * 2
+    # data_low5 = input.clone()
+    t = np.arange(0, valid_len, 1)
+    fs = valid_len
+    dt = 1/fs
+    x1 = np.arange(0, 1, dt)
+    # nfft = 샘플 개수
+    nfft = len(x1)
+    # df = 주파수 증가량
+    df = fs/nfft
+    k = np.arange(nfft)
+    # f = 0부터~최대주파수까지의 범위
+    f = k*df 
+    # 스펙트럼은 중앙을 기준으로 대칭이 되기 때문에 절반만 구함
+    if valid_len % 2 :
+        nfft_half = math.trunc(nfft/2)
+    else : 
+        nfft_half = math.trunc(nfft/2)+1
+#     nfft_half = torch.trunc(nfft/2).to(device)
+    f0 = f[range(0,nfft_half)] 
+    # 증폭값을 두 배로 계산(위에서 1/2 계산으로 인해 에너지가 반으로 줄었기 때문) 
+    for jt in range(22):
+        for ax in range(6):
+                # joint rw1 : 8 , x축
+            y1 = data[:valid_len,jt,ax] - np.mean(data[:valid_len,jt,ax])
+            fft_y = np.fft.fft(y1)/nfft * 2 
+            fft_y0 = fft_y[(range(0,nfft_half))]
+            # 벡터(복소수)의 norm 측정(신호 강도)
+            amp = np.abs(fft_y0)
+            idxy = np.argsort(-amp)   
+            y_low5 = np.zeros(nfft)
+            for i in range(len(idxy)): 
+                freq = f0[idxy[i]] 
+                yx = fft_y[idxy[i]] 
+                coec = yx.real 
+                coes = yx.imag * -1 
+                if i < select_const :     
+                    y_low5 += amp_const*(coec * np.cos(2 * np.pi * freq * x1) + coes * np.sin(2 * np.pi * freq * x1))                
                 else : 
-                    output[:valid_len[idx], jt:jt+1,ax] = data_low5[:valid_len[idx]].unsqueeze(1)
-        dataset[idx] = output    
+                    y_low5 += (coec * np.cos(2 * np.pi * freq * x1) + coes * np.sin(2 * np.pi * freq * x1))                                        
+    
+            y_low5 = y_low5 + np.mean(data[:valid_len,jt,ax])
+                # print(torch.sum(input[:valid_len,jt,ax]-y_low5))
+            data_low5 = y_low5
+
+            if valid_len % 2:
+                output[:valid_len, jt:jt+1,ax] = np.expand_dims(data_low5[:valid_len], axis=1)
+            else : 
+                output[:valid_len, jt:jt+1,ax] = np.expand_dims(data_low5[:valid_len], axis=1)
+    dataset = output    
     return dataset
 def is_dist_avail_and_initialized():
     if not dist.is_available():
@@ -178,9 +183,10 @@ def is_dist_avail_and_initialized():
     return True
 
 def flip(motions):
-    motion_flip = motions.clone()
-    for idx, i in enumerate([0,2,1,3,5,4,6,8,7,9,11,10,12,14,13,15,17,16,19,18,21,20]):
-        motion_flip[:,:,idx,:] = motions[:,:,i,:]
+    motion_flip = motions.copy()
+    if torch.rand(1)<0.3:
+        for idx, i in enumerate([0,2,1,3,5,4,6,8,7,9,11,10,12,14,13,15,17,16,19,18,21,20]):
+            motion_flip[:,idx] = motions[:,i]
     return motion_flip
 
 class MetricLogger(object):
@@ -300,7 +306,7 @@ class DINOLoss(nn.Module):
         # teacher centering and sharpening
         temp = self.teacher_temp_schedule[epoch]
         teacher_out = F.softmax((teacher_output - self.center) / temp, dim=-1)
-        teacher_out = teacher_out.detach().chunk(teacher_output.shape[0])
+        teacher_out = teacher_out.detach().chunk(2)
 
         total_loss = 0
         n_loss_terms = 0
@@ -327,6 +333,37 @@ class DINOLoss(nn.Module):
 
         # ema update
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)
+class DataAugmentationDINO(object):
+    def __init__(self, local_crops_number, seq_len):
+       self.local_crops_number = local_crops_number
+       self.seq_len = seq_len
+    def __call__(self, query):
+        motions, valid_len, labels, proc_labels = query['rotation_6d_pose_list'], query['valid_length_list'], query['labels'], query['proc_label_list'] 
+        crops = []
+        valid_len_list = []
+        labels_list = []
+        proc_label_list = []
+        self.global_transfo1 = flip(motions)
+        self.global_transfo1 = lerp_input_repr(self.global_transfo1, valid_len, self.seq_len, mode='global')
+        self.global_transfo2 = flip(motions)
+        self.global_transfo2 = lerp_input_repr(self.global_transfo2, valid_len, self.seq_len, mode='global')
+        crops.append(self.global_transfo1.transpose(2,0,1))
+        crops.append(self.global_transfo2.transpose(2,0,1))
+        valid_len_list.append(valid_len)
+        valid_len_list.append(valid_len)
+        labels_list.append(labels)
+        labels_list.append(labels)
+        proc_label_list.append(proc_labels)
+        proc_label_list.append(proc_labels)
+        for _ in range(self.local_crops_number):
+            self.local_transfo = flip(motions)
+            self.local_transfo = lerp_input_repr(self.local_transfo, valid_len, self.seq_len, mode='local')
+            crops.append(self.local_transfo.transpose(2,0,1))
+            valid_len_list.append(valid_len)
+            labels_list.append(labels)
+            proc_label_list.append(proc_labels)
+        return {'rotation_6d_pose_list': crops, 'valid_length_list': valid_len_list,'labels': labels_list, 'proc_label_list':proc_label_list }
+
 
 
 def train(opt):
@@ -352,23 +389,26 @@ def train(opt):
     wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load EmotionMoCap Dataset
-    train_dataset = HumanAct12Dataset(data_path="../dataset/experiment/HumanAct12Poses/humanact12poses.pkl", motion_length=150, dataset="train")
-    # sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
+    transform = DataAugmentationDINO(local_crops_number=opt.local_crops_number, seq_len=opt.window)
+    train_dataset = HumanAct12Dataset2(data_path="../dataset/experiment/HumanAct12Poses/humanact12poses.pkl", motion_length=150, dataset="train", transform=transform)
+    sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
     full_proc_label_list = list(humanact12_label_map.values())
     label_map = humanact12_label_map
+
+    
     data_loader = torch.utils.data.DataLoader(
         dataset=train_dataset,
-        # sampler=sampler,
+        sampler=sampler,
         batch_size=opt.batch_size_per_gpu,
-        num_workers=0,
-        shuffle=True,
-        pin_memory=True)
+        num_workers=opt.num_workers,
+        pin_memory=True,
+        drop_last=True)
 
     student = mits.__dict__['vit_tiny'](
         patch_size=opt.patch_size,
-        drop_path_rate=0.1,  # stochastic depth
+        drop_path_rate=opt.drop_path_rate,  # stochastic depth
     )
-    teacher = mits.__dict__['vit_tiny'](patch_size=[5,1])
+    teacher = mits.__dict__['vit_tiny'](patch_size=opt.patch_size)
     embed_dim = student.embed_dim
     
     student = utils.MultiCropWrapper(student, DINOHead(
@@ -385,7 +425,7 @@ def train(opt):
 
     teacher_without_ddp = teacher
 
-    student = nn.parallel.DistributedDataParallel(student, device_ids=[1])
+    student = nn.parallel.DistributedDataParallel(student, device_ids=[0])
     # teacher and student start with the same weights
     teacher_without_ddp.load_state_dict(student.module.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients
@@ -396,7 +436,7 @@ def train(opt):
     # ============ preparing loss ... ============
     dino_loss = DINOLoss(
         opt.out_dim,
-        opt.batch_size_per_gpu + opt.batch_size_per_gpu*2,  # total number of crops = 2 global crops + local_crops_number
+        opt.local_crops_number + 2,  # total number of crops = 2 global crops + local_crops_number
         opt.warmup_teacher_temp,
         opt.teacher_temp,
         opt.warmup_teacher_temp_epochs,
@@ -408,7 +448,7 @@ def train(opt):
 
     params_groups = utils.get_params_groups(student)
 
-    optimizer = AdamW(params=params_groups, lr=opt.lr)
+    optimizer = AdamW(params=params_groups)
 
     # ============ init schedulers ... ============
     lr_schedule = utils.cosine_scheduler(
@@ -475,32 +515,12 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
         # motions = batch["rotation_6d_pose_list"].cuda(non_blocking=True)
         # valid_length = batch["valid_length_list"].cuda(non_blocking=True)        
         # teacher and student forward passes + compute dino loss
-        motions = datas['rotation_6d_pose_list']
-        
-        valid_length = datas['valid_length_list']
+        motions =[im.cuda(non_blocking=True) for im in datas['rotation_6d_pose_list']]
+        valid_length = [vl.cuda(non_blocking=True) for vl in datas['valid_length_list']]
 
         with torch.cuda.amp.autocast(fp16_scaler is not None):
-            
-            if torch.rand(1)<0.3:
-                motions = flip(motions)
-            
-            motion_local1 = lerp_input_repr(motions, valid_length, 0,5, 150)
-            # motion_local2 = lerp_input_repr(motions, valid_length, 0,10, 150)
-            motion_local3 = lerp_input_repr(motions, valid_length, 1,6, 150)
-            # motion_local4 = lerp_input_repr(motions, valid_length, 1,11, 150)
-
-            B,T,J,C = motions.shape
-            motion_local = torch.cat([motions,motion_local1, motion_local3], axis=0)
-            data_local = torch.cat([motions, motion_local], axis=0)
-            data_global = motions
-            data_local = data_local.permute(0,3,1,2)
-            data_global = data_global.permute(0,3,1,2)
-            # motions = motions.unsqueeze(1)
-            # motions_flip = motions_flip.permute(0,3,1,2)
-            # motions_flip = motions_flip.unsqueeze(1)
-            teacher_output = teacher(data_global.cuda())  # only the 2 global views pass through the teacher
-            # student_output = student(torch.cat([motions,motions_flip], axis=0))
-            student_output = student(data_local.cuda())
+            teacher_output = teacher(motions[:2], valid_length[:2],30)  # only the 2 global views pass through the teacher
+            student_output = student(motions, valid_length, 30)
             loss = dino_loss(student_output, teacher_output, epoch)
 
         if not math.isfinite(loss.item()):
@@ -555,9 +575,9 @@ def parse_opt():
     # parser.add_argument('--device', default='2', help='cuda device')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='humanact12_dino_patch2_512', help='save to project/name')
-    parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
-    parser.add_argument('--lr', type=float, default=0.0001, help='generator_learning_rate')
-    parser.add_argument('--patch_size', default=[5,1], type=list, help="""Size in pixels
+    parser.add_argument('--save_interval', type=int, default=5, help='Log model after every "save_period" epoch')
+    parser.add_argument('--lr', type=float, default=0.001, help='generator_learning_rate')
+    parser.add_argument('--patch_size', default=[30,1], type=list, help="""Size in pixels
         of input square patches - default 16 (for 16x16 patches). Using smaller
         values leads to better performance but requires more memory. Applies only
         for ViTs (vit_tiny, vit_small and vit_base). If <16, we recommend disabling
@@ -566,43 +586,49 @@ def parse_opt():
         to use half precision for training. Improves training time and memory requirements,
         but can provoke instability and slight decay of performance. We recommend disabling
         mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs.""")        
-    parser.add_argument('--out_dim', default=512, type=int, help="""Dimensionality of
+    parser.add_argument('--out_dim', default=2048, type=int, help="""Dimensionality of
         the DINO head output. For complex and large datasets large values (like 65k) work well.""")
     parser.add_argument('--norm_last_layer', default=True, type=bool_flag,
         help="""Whether or not to weight normalize the last layer of the DINO head.
         Not normalizing leads to better performance but can make the training unstable.
         In our experiments, we typically set this paramater to False with vit_small and True with vit_base.""")
-    parser.add_argument('--momentum_teacher', default=1, type=float, help="""Base EMA
+    parser.add_argument('--momentum_teacher', default=0.996, type=float, help="""Base EMA
         parameter for teacher update. The value is increased to 1 during training with cosine schedule.
         We recommend setting a higher value with small batches: for example use 0.9995 with batch size of 256.""")
     parser.add_argument('--use_bn_in_head', default=False, type=bool_flag,
         help="Whether to use batch normalizations in projection head (Default: False)")
     # Temperature teacher parameters
-    parser.add_argument('--warmup_teacher_temp', default=0.02, type=float,
+    parser.add_argument('--warmup_teacher_temp', default=0.04, type=float,
         help="""Initial value for the teacher temperature: 0.04 works well in most cases.
         Try decreasing it if the training loss does not decrease.""")
     parser.add_argument('--teacher_temp', default=0.04, type=float, help="""Final value (after linear warmup)
         of the teacher temperature. For most experiments, anything above 0.07 is unstable. We recommend
         starting with the default value of 0.04 and increase this slightly if needed.""")
-    parser.add_argument('--warmup_teacher_temp_epochs', default=10, type=int,
+    parser.add_argument('--warmup_teacher_temp_epochs', default=0, type=int,
         help='Number of warmup epochs for the teacher temperature (Default: 30).')
     parser.add_argument('--weight_decay', type=float, default=0.04, help="""Initial value of the
         weight decay. With ViT, a smaller value at the beginning of training works well.""")
     parser.add_argument('--weight_decay_end', type=float, default=0.4, help="""Final value of the
         weight decay. We use a cosine schedule for WD and using a larger decay by
         the end of training improves performance for ViTs.""")
-    parser.add_argument('--batch_size_per_gpu', default=16, type=int,
+    parser.add_argument('--batch_size_per_gpu', default=4, type=int,
         help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
     parser.add_argument('--seed', default=0, type=int, help='Random seed.')
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
-    parser.add_argument('--arch', default='vit_tiny', type=str,
+    parser.add_argument('--arch', default='vit_small', type=str,
         help="""Name of architecture to train. For quick experiments with ViTs,
         we recommend using vit_tiny or vit_small.""")        
-    parser.add_argument("--warmup_epochs", default=10, type=int,
+    parser.add_argument("--warmup_epochs", default=0, type=int,
         help="Number of epochs for the linear learning-rate warm up.")
-    parser.add_argument('--min_lr', type=float, default=1e-4, help="""Target LR at the
+    parser.add_argument('--min_lr', type=float, default=1e-6, help="""Target LR at the
         end of optimization. We use a cosine LR schedule with linear warmup.""")        
+    parser.add_argument('--drop_path_rate', type=float, default=0.1, help="stochastic depth rate")
+    parser.add_argument('--local_crops_number', type=int, default=8, help="""Number of small
+        local views to generate. Set this parameter to 0 to disable multi-crop training.
+        When disabling multi-crop we recommend to use "--global_crops_scale 0.14 1." """)    
+    parser.add_argument('--num_workers', default=0, type=int, help='Number of data loading workers per GPU.')
+
     parser.add_argument('--clip_grad', type=float, default=3.0, help="""Maximal parameter
         gradient norm if using gradient clipping. Clipping with norm .3 ~ 1.0 can
         help optimization for larger ViT architectures. 0 for disabling.""")        
