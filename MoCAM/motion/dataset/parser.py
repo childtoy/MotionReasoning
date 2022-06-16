@@ -17,6 +17,7 @@ class BABELParser:
         self.setaside = setaside
 
         self.json_path = os.path.join(self.babel_dir, f"{dataset}.json")
+        print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!', self.json_path)
         self.json_data = self._load()
 
     def _load(self):

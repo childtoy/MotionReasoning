@@ -152,12 +152,13 @@ def extract_features(model, data_loader, label_encoder, use_cuda=True, multiscal
 
 
 @torch.no_grad()
-def knn_classifier(train_features, train_labels, test_features, test_labels, k, T, num_classes=1000):
+def knn_classifier(train_features, train_labels, test_features, test_labels, k, T, num_classes=12):
     top1, top5, total = 0.0, 0.0, 0
     train_features = train_features.t()
-    num_test_images, num_chunks = test_labels.shape[0], 100
+    num_test_images, num_chunks = test_labels.shape[0], 1
     imgs_per_chunk = num_test_images // num_chunks
     retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
+    print('imgs_per_chunk', imgs_per_chunk)
     for idx in range(0, num_test_images, imgs_per_chunk):
         # get the features for test images
         features = test_features[
@@ -183,7 +184,6 @@ def knn_classifier(train_features, train_labels, test_features, test_labels, k, 
             1,
         )
         _, predictions = probs.sort(1, True)
-
         # find the predictions that match the target
         correct = predictions.eq(targets.data.view(-1, 1))
         top1 = top1 + correct.narrow(1, 0, 1).sum().item()
@@ -202,12 +202,12 @@ class ReturnIndexDataset(datasets.ImageFolder):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Evaluation with weighted k-NN on ImageNet')
-    parser.add_argument('--batch_size_per_gpu', default=4, type=int, help='Per-GPU batch-size')
+    parser.add_argument('--batch_size_per_gpu', default=64, type=int, help='Per-GPU batch-size')
     parser.add_argument('--nb_knn', default=[10, 20, 100, 200], nargs='+', type=int,
         help='Number of NN to use. 20 is usually working the best.')
     parser.add_argument('--temperature', default=0.07, type=float,
         help='Temperature used in the voting coefficient')
-    parser.add_argument('--pretrained_weights', default='runs/train/humanact12_dino_patch2_512201/train-25.pt', type=str, help="Path to pretrained weights to evaluate.")
+    parser.add_argument('--pretrained_weights', default='runs/train/dino10_amass_out1024_batch64_moteacher9963/train-50.pt', type=str, help="Path to pretrained weights to evaluate.")
     parser.add_argument('--use_cuda', default=True, type=utils.bool_flag,
         help="Should we store the features on GPU? We recommend setting this to False if you encounter OOM")
     parser.add_argument('--arch', default='vit_tiny', type=str, help='Architecture')
@@ -222,7 +222,6 @@ if __name__ == '__main__':
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
-    parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
     args = parser.parse_args()
 
     utils.init_distributed_mode(args)

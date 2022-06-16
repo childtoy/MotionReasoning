@@ -94,7 +94,11 @@ class AMASSDataset(Dataset):
         query["proc_label_list"] = self.padded_dataset["proc_label_list"][idx]
         query["rotation_6d_pose_list"] = self.padded_dataset["rotation_6d_pose_list"][idx]
         query["labels"] = self.padded_dataset["proc_label_list"][idx]
-        return query
+        if self.transform is not None:
+            sample = self.transform(query)
+        else :
+            sample = query
+        return sample
 
     def _process(self):
         preproccessed = preprocess_dataset(self.dataset, self.target_fps, self.data, self.max_length)

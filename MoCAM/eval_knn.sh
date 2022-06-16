@@ -1,3 +1,2 @@
 python3 eval_knn.py \
-	--pretrained_weights=runs/train/humanact12_dino_patch2_51244weights/train-50.pt \
-	--output_dir=knn_humanact12_dino_patch2_51244_ep50 \
+	--pretrained_weights=runs/train/dino10_amass_out1024_batch64_moteacher9963/train-100.pt \
